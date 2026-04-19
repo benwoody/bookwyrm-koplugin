@@ -32,14 +32,19 @@ jobs:
       - uses: https://code.forgejo.org/actions/checkout@v4
         with:
           fetch-depth: 0
+          fetch-tags: true
 
       - name: Build release zip
         run: make release
 
-      - name: Get release notes
-        id: tag_message
+      - name: Create Codeberg release
+        env:
+          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
+
+          # Fetch full tag objects (annotations)
+          git fetch origin --tags --force
 
           # Find the previous tag to build the commit log
           PREV_TAG=$(git tag --sort=-creatordate | grep -A1 "^${TAG}$" | tail -1)
@@ -55,17 +60,8 @@ jobs:
           # Append commit log
           NOTES="${NOTES}"$'\n\n'"### Commits"$'\n\n'"${COMMITS}"
 
-          # Escape for JSON
+          # Escape for JSON and build release
           BODY=$(echo "${NOTES}" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read()))')
-          echo "body=${BODY}" >> "$GITHUB_OUTPUT"
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-
-      - name: Create Codeberg release
-        env:
-          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
-        run: |
-          TAG="${{ steps.tag_message.outputs.tag }}"
-          BODY='${{ steps.tag_message.outputs.body }}'
 
           RESPONSE=$(curl -s -X POST \
             "${GITHUB_SERVER_URL}/api/v1/repos/${GITHUB_REPOSITORY}/releases" \
